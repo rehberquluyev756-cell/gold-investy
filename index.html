@@ -1,0 +1,197 @@
+
+<!doctype html>
+<html lang="az">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gold Investisiya — Admin</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding:16px;background:radial-gradient(ellipse at top,#3a280d,#100b05 48%,#070604);color:#fff;font-family:Arial,sans-serif}
+.wrap{max-width:560px;margin:24px auto}
+.brand{text-align:center;color:#ffcc43;font-size:36px;font-weight:900;margin:18px 0 24px}
+.card{background:linear-gradient(145deg,#38270f,#171006 58%,#0d0904);border:1px solid #8d641c;border-radius:18px;padding:20px;margin:14px 0}
+h1{font-size:22px;color:#ffcc43;margin:0 0 14px}
+label{display:block;color:#c7b88f;font-size:14px;margin:13px 0 6px}
+input{width:100%;padding:14px;border-radius:10px;border:1px solid #a87925;background:#090704;color:white;font-size:16px}
+button{border:1px solid #fff0b5;border-radius:11px;padding:14px;font-size:16px;font-weight:800;cursor:pointer;background:linear-gradient(#ffe477,#e99b08);color:#170e00;width:100%;margin-top:14px}
+button:disabled{opacity:.6}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.minus{background:linear-gradient(#ef7777,#b82e2e);color:#fff}
+.status{min-height:24px;line-height:1.4;margin:12px 0 0}
+.good{color:#8ee6a4}.bad{color:#ff9292}
+.hidden{display:none!important}
+.muted{font-size:13px;color:#c7b88f}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logout{width:auto;margin:0;padding:9px 12px;font-size:13px}
+@media(max-width:440px){.row{grid-template-columns:1fr}.card{padding:16px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<div class="brand">♛ GOLD INVESTISIYA<br>
+<span style="font-size:15px">ADMIN PANEL</span></div>
+
+<section class="card" id="loginCard">
+<h1>Admin girişi</h1>
+<label>Admin Gmail</label>
+<input id="adminEmail" type="email" placeholder="admin@gmail.com">
+<label>Şifrə</label>
+<input id="adminPassword" type="password" placeholder="Şifrəniz">
+<button id="loginBtn" onclick="login()">Daxil ol</button>
+<p id="loginStatus" class="status"></p>
+</section>
+
+<section class="card hidden" id="panel">
+<div class="top">
+<h1>Balans idarəetməsi</h1>
+<button class="logout" onclick="logout()">Çıxış</button>
+</div>
+<p class="muted" id="signedIn"></p>
+<label>Oyunçunun Gmail ünvanı</label>
+<input id="playerEmail" type="email" placeholder="oyuncu@gmail.com">
+<label>Məbləğ (AZN)</label>
+<input id="amount" type="number" min="0.01" max="1000000" step="0.01" placeholder="10.00">
+<div class="row">
+<button id="addBtn" onclick="adjust('add')">Balans +</button>
+<button id="minusBtn" class="minus" onclick="adjust('subtract')">Balans −</button>
+</div>
+<p id="actionStatus" class="status"></p>
+<p id="balanceResult" class="muted"></p>
+</section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL='https://bzzthichmohgpvtiukvj.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_YJNB27X8yUSTp9ha0PYH0g_rKSVMu7d';
+
+const db=window.supabase.createClient(
+SUPABASE_URL,
+SUPABASE_PUBLISHABLE_KEY
+);
+
+function status(id,msg,ok=false){
+const el=document.getElementById(id);
+el.textContent=msg;
+el.className='status '+(ok?'good':'bad');
+}
+
+async function callAdmin(payload){
+const {data,error}=await db.functions.invoke(
+'admin-balance',{body:payload}
+);
+if(error)throw new Error(error.message||'Sorğu uğursuz oldu');
+if(data?.error)throw new Error(data.error);
+return data;
+}
+
+function showPanel(user){
+document.getElementById('loginCard').classList.add('hidden');
+document.getElementById('panel').classList.remove('hidden');
+document.getElementById('signedIn').textContent=
+'Daxil olan admin: '+(user.email||'');
+}
+
+async function login(){
+const btn=document.getElementById('loginBtn');
+const email=document.getElementById('adminEmail').value.trim();
+const password=document.getElementById('adminPassword').value;
+status('loginStatus','');
+
+if(!email||!password){
+status('loginStatus','Gmail və şifrəni daxil edin.');
+return;
+}
+
+btn.disabled=true;
+btn.textContent='Yoxlanılır...';
+
+try{
+const {data,error}=await db.auth.signInWithPassword({email,password});
+if(error)throw error;
+
+try{
+await callAdmin({action:'check'});
+}catch(e){
+await db.auth.signOut();
+throw e;
+}
+showPanel(data.user);
+}catch(e){
+status('loginStatus',e.message||'Giriş alınmadı.');
+}finally{
+btn.disabled=false;
+btn.textContent='Daxil ol';
+}
+}
+
+async function adjust(operation){
+const email=document.getElementById('playerEmail').value.trim();
+const amount=Number(document.getElementById('amount').value);
+const buttons=[
+document.getElementById('addBtn'),
+document.getElementById('minusBtn')
+];
+
+status('actionStatus','');
+document.getElementById('balanceResult').textContent='';
+
+if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+status('actionStatus','Gmail ünvanını düzgün yazın.');
+return;
+}
+
+if(!Number.isFinite(amount)||amount<=0||amount>1000000||
+Math.round(amount*100)!==amount*100){
+status('actionStatus','Məbləği düzgün yazın.');
+return;
+}
+
+buttons.forEach(b=>b.disabled=true);
+
+try{
+const result=await callAdmin({
+action:'adjust',
+email,
+amount,
+operation
+});
+
+status('actionStatus',
+operation==='add'?'Balans artırıldı.':'Balans azaldıldı.',
+true);
+
+document.getElementById('balanceResult').textContent=
+'Oyunçu: '+result.email+
+' | Yeni balans: '+Number(result.balance).toFixed(2)+' AZN';
+
+document.getElementById('amount').value='';
+}catch(e){
+status('actionStatus',e.message||'Əməliyyat alınmadı.');
+}finally{
+buttons.forEach(b=>b.disabled=false);
+}
+}
+
+async function logout(){
+await db.auth.signOut();
+location.reload();
+}
+
+window.addEventListener('load',async()=>{
+try{
+const {data}=await db.auth.getSession();
+if(data.session){
+try{
+await callAdmin({action:'check'});
+showPanel(data.session.user);
+}catch(e){
+await db.auth.signOut();
+}
+}
+}catch(e){}
+});
+</script>
+</body>
+</html>
